@@ -6,7 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import schedule from 'node-schedule';
 
-const app = express();
+const app = express(
+  
+).use(express.json());
 const port = process.env.PORT || 3000;
 
 const poppler = new Poppler();
