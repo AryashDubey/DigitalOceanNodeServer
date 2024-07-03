@@ -5,16 +5,14 @@ import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import fetch from 'node-fetch';
 import schedule from 'node-schedule';
-import { pdfURL } from './utils/consts.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 const poppler = new Poppler();
 
-app.get('/convert', async (req, res) => {
-  const pdfUrl = pdfURL;
-
+app.post('/convert', async (req, res) => {
+const pdfUrl = req.body.pdfUrl
   if (!pdfUrl) {
     return res.status(400).send('PDF URL is required');
   }
