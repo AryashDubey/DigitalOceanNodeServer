@@ -1,0 +1,1 @@
+export const pdfURL= `https://firebasestorage.googleapis.com/v0/b/binsr-484d7.appspot.com/o/pdf%2F0mbJzTbNLNTybHUWcsz2a8kuxYD3%2F22b37f9d2636645d9e18dcb400a945e10214faee5ba.pdf?alt=media&token=5ac960ff-ea33-4da6-94cf-2449829644e0`;
