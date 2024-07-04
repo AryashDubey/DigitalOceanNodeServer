@@ -33,7 +33,7 @@ const pdfUrl = req.body.pdfUrl
     const options = {
       firstPageToConvert: 1,
       pngFile: true, 
-      scalePageTo:1024
+      scalePageTo:1536
     };
     await poppler.pdfToCairo(pdfPath, outputFileName, options);
 
@@ -48,7 +48,7 @@ const pdfUrl = req.body.pdfUrl
     res.json({ links });
 
     // Schedule the deletion of the images and directories
-    schedule.scheduleJob(Date.now() + 60 * 60 * 1000, async () => {
+    schedule.scheduleJob(Date.now() + 10 * 60 * 1000, async () => {
       try {
         const filesToDelete = await fs.readdir(outputDir);
         for (const file of filesToDelete) {
