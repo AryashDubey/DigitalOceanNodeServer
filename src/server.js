@@ -48,7 +48,7 @@ app.post("/convert", async (req, res) => {
     );
     await fs.mkdir(outputDir, { recursive: true });
 
-    const chunkSize = 5;
+    const chunkSize = 20;
     const chunks = Math.ceil(totalPages / chunkSize);
 
     const promises = Array.from({ length: chunks }, async (_, chunkIndex) => {
