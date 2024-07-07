@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import fetch from "node-fetch";
 import schedule from "node-schedule";
 import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
+import { fileURLToPath } from "url";
 
 const app = express().use(express.json());
 const port = process.env.PORT || 8080;
@@ -27,6 +28,9 @@ const convertChunk = async (buffer, outputDir, firstPage, lastPage) => {
   const outputFileName = path.join(outputDir, `output_page_${firstPage}-${lastPage}`);
   await poppler.pdfToCairo(buffer, outputFileName, options);
 };
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 if (!isMainThread) {
   convertChunk(workerData.buffer, workerData.outputDir, workerData.firstPage, workerData.lastPage)
@@ -57,7 +61,7 @@ app.post("/convert", async (req, res) => {
 
     console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
 
-    const outputDir = path.join(path.resolve(), "output", Date.now() + uuidv4());
+    const outputDir = path.join(__dirname, "output", Date.now() + uuidv4());
     await fs.mkdir(outputDir, { recursive: true });
 
     const chunkSize = 10; // Adjust this based on your resources
@@ -117,7 +121,7 @@ app.post("/convert", async (req, res) => {
   }
 });
 
-app.use("/images", express.static(path.join(path.resolve(), "output")));
+app.use("/images", express.static(path.join(__dirname, "output")));
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
