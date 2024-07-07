@@ -5,8 +5,6 @@ import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import fetch from "node-fetch";
 import schedule from "node-schedule";
-import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
-import { fileURLToPath } from "url";
 
 const app = express().use(express.json());
 const port = process.env.PORT || 8080;
@@ -18,26 +16,6 @@ const getTotalPages = (pdfInfoOutput) => {
   return pagesMatch ? parseInt(pagesMatch[1], 10) : 0;
 };
 
-const convertChunk = async (buffer, outputDir, firstPage, lastPage) => {
-  const options = {
-    firstPageToConvert: firstPage,
-    lastPageToConvert: lastPage,
-    pngFile: true,
-    scalePageTo: 1536,
-  };
-  const outputFileName = path.join(outputDir, `output_page_${firstPage}-${lastPage}`);
-  await poppler.pdfToCairo(buffer, outputFileName, options);
-};
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-if (!isMainThread) {
-  convertChunk(workerData.buffer, workerData.outputDir, workerData.firstPage, workerData.lastPage)
-    .then(() => parentPort.postMessage("done"))
-    .catch((err) => parentPort.postMessage({ error: err.message }));
-}
-
 app.post("/convert", async (req, res) => {
   const pdfUrl = req.body.pdfUrl;
   let totalPages = req.body.totalPages;
@@ -45,13 +23,15 @@ app.post("/convert", async (req, res) => {
     return res.status(400).send("PDF URL is required");
   }
   const functionTime = Date.now();
-  console.log(`Received REQUEST AT ${functionTime}`);
+  console.log(`Received REQUEST AT ${functionTime}`)
 
   try {
+    // Download the PDF file
     const response = await fetch(pdfUrl);
     const buffer = await response.buffer();
 
-    console.log(`Took ${Date.now() - functionTime}ms to download the PDF file`);
+    console.log(`Took ${Date.now() - functionTime}ms to download the PDF file`)
+    
 
     if (!totalPages) {
       const pdfInfo = await poppler.pdfInfo(buffer);
@@ -59,50 +39,56 @@ app.post("/convert", async (req, res) => {
       console.log(`Total pages: ${totalPages}`);
     }
 
-    console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
-
-    const outputDir = path.join(__dirname, "output", Date.now() + uuidv4());
+    console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`)
+    // Convert the PDF to images
+    const outputDir = path.join(
+      path.resolve(),
+      "output",
+      Date.now() + uuidv4()
+    );
     await fs.mkdir(outputDir, { recursive: true });
 
-    const chunkSize = 10; // Adjust this based on your resources
+    const chunkSize = 40;
     const chunks = Math.ceil(totalPages / chunkSize);
-    const workers = [];
 
-    for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
+    const promises = Array.from({ length: chunks }, async (_, chunkIndex) => {
       const firstPage = chunkIndex * chunkSize + 1;
       const lastPage = Math.min(firstPage + chunkSize - 1, totalPages);
-      workers.push(
-        new Promise((resolve, reject) => {
-          const worker = new Worker(__filename, {
-            workerData: { buffer, outputDir, firstPage, lastPage },
-          });
-          worker.on("message", (msg) => {
-            if (msg === "done") {
-              resolve();
-            } else {
-              reject(new Error(msg.error));
-            }
-          });
-        })
+      const outputFileName = path.join(outputDir, `output_page`);
+      const options = {
+        firstPageToConvert: firstPage,
+        lastPageToConvert: lastPage,
+        pngFile: true,
+        scalePageTo: 1536,
+      };
+      await poppler.pdfToCairo(buffer, outputFileName, options);
+      console.log(
+        `Converted pages ${firstPage} to ${lastPage} of ${totalPages}`
       );
-    }
+    });
 
-    await Promise.all(workers);
+    await Promise.all(promises);
 
+    // Create temporary links to the images
     const files = await fs.readdir(outputDir);
     const links = files.map((file) => {
-      const fileUrl = `${req.protocol}://${req.get("host")}/images/${path.basename(outputDir)}/${file}`;
+      const fileUrl = `${req.protocol}://${req.get(
+        "host"
+      )}/images/${path.basename(outputDir)}/${file}`;
       return fileUrl;
     });
 
+    //sort the links
     links.sort((a, b) => {
       const aNumber = parseInt(a.match(/(\d+)/)[1]);
       const bNumber = parseInt(b.match(/(\d+)/)[1]);
       return aNumber - bNumber;
     });
 
+    // Send the links as the response
     res.json({ links });
 
+    // Schedule the deletion of the images and directories
     schedule.scheduleJob(Date.now() + 10 * 60 * 1000, async () => {
       try {
         const filesToDelete = await fs.readdir(outputDir);
@@ -121,7 +107,8 @@ app.post("/convert", async (req, res) => {
   }
 });
 
-app.use("/images", express.static(path.join(__dirname, "output")));
+// Serve the images
+app.use("/images", express.static(path.join(path.resolve(), "output")));
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
