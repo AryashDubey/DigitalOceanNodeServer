@@ -7,7 +7,7 @@ import fetch from "node-fetch";
 import schedule from "node-schedule";
 
 const app = express().use(express.json());
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 
 const poppler = new Poppler();
 
@@ -48,7 +48,7 @@ app.post("/convert", async (req, res) => {
     );
     await fs.mkdir(outputDir, { recursive: true });
 
-    const chunkSize = 20;
+    const chunkSize = 40;
     const chunks = Math.ceil(totalPages / chunkSize);
 
     const promises = Array.from({ length: chunks }, async (_, chunkIndex) => {
