@@ -5,10 +5,14 @@ import fs from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import fetch from "node-fetch";
 import schedule from "node-schedule";
+import { Worker } from "worker_threads";
+import compression from "compression";
 
-const app = express().use(express.json());
+const app = express();
+app.use(express.json());
+app.use(compression());
+
 const port = process.env.PORT || 8080;
-
 const poppler = new Poppler();
 
 const getTotalPages = (pdfInfoOutput) => {
@@ -16,41 +20,56 @@ const getTotalPages = (pdfInfoOutput) => {
   return pagesMatch ? parseInt(pagesMatch[1], 10) : 0;
 };
 
+const convertPDFChunk = (inputFile, outputFileName, options) => {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('./pdfWorker.js', {
+      workerData: { inputFile, outputFileName, options }
+    });
+    worker.on('message', resolve);
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
+};
+
 app.post("/convert", async (req, res) => {
+  console.log("Received POST request to /convert");
   const pdfUrl = req.body.pdfUrl;
   let totalPages = req.body.totalPages;
+
   if (!pdfUrl) {
     return res.status(400).send("PDF URL is required");
   }
+
   const functionTime = Date.now();
-  console.log(`Received REQUEST AT ${functionTime}`)
+  console.log(`Processing request for PDF: ${pdfUrl}`);
 
   try {
     // Download the PDF file
     const response = await fetch(pdfUrl);
     const buffer = await response.buffer();
+    console.log(`Took ${Date.now() - functionTime}ms to download the PDF file`);
 
-    console.log(`Took ${Date.now() - functionTime}ms to download the PDF file`)
-    
+    // Save the buffer to a temporary file
+    const tempDir = path.join(path.resolve(), "temp");
+    await fs.mkdir(tempDir, { recursive: true });
+    const tempFile = path.join(tempDir, `${Date.now()}.pdf`);
+    await fs.writeFile(tempFile, buffer);
 
     if (!totalPages) {
-      const pdfInfo = await poppler.pdfInfo(buffer);
+      const pdfInfo = await poppler.pdfInfo(tempFile);
       totalPages = getTotalPages(pdfInfo);
       console.log(`Total pages: ${totalPages}`);
     }
+    console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
 
-    console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`)
     // Convert the PDF to images
-    const outputDir = path.join(
-      path.resolve(),
-      "output",
-      Date.now() + uuidv4()
-    );
+    const outputDir = path.join(path.resolve(), "output", Date.now() + uuidv4());
     await fs.mkdir(outputDir, { recursive: true });
 
-    const chunkSize = 40;
+    const chunkSize = 20; // Reduced chunk size
     const chunks = Math.ceil(totalPages / chunkSize);
-
     const promises = Array.from({ length: chunks }, async (_, chunkIndex) => {
       const firstPage = chunkIndex * chunkSize + 1;
       const lastPage = Math.min(firstPage + chunkSize - 1, totalPages);
@@ -61,10 +80,9 @@ app.post("/convert", async (req, res) => {
         pngFile: true,
         scalePageTo: 1536,
       };
-      await poppler.pdfToCairo(buffer, outputFileName, options);
-      console.log(
-        `Converted pages ${firstPage} to ${lastPage} of ${totalPages}`
-      );
+
+      await convertPDFChunk(tempFile, outputFileName, options);
+      console.log(`Converted pages ${firstPage} to ${lastPage} of ${totalPages}`);
     });
 
     await Promise.all(promises);
@@ -72,13 +90,10 @@ app.post("/convert", async (req, res) => {
     // Create temporary links to the images
     const files = await fs.readdir(outputDir);
     const links = files.map((file) => {
-      const fileUrl = `${req.protocol}://${req.get(
-        "host"
-      )}/images/${path.basename(outputDir)}/${file}`;
-      return fileUrl;
+      return `${req.protocol}://${req.get("host")}/images/${path.basename(outputDir)}/${file}`;
     });
 
-    //sort the links
+    // Sort the links
     links.sort((a, b) => {
       const aNumber = parseInt(a.match(/(\d+)/)[1]);
       const bNumber = parseInt(b.match(/(\d+)/)[1]);
@@ -91,24 +106,31 @@ app.post("/convert", async (req, res) => {
     // Schedule the deletion of the images and directories
     schedule.scheduleJob(Date.now() + 10 * 60 * 1000, async () => {
       try {
+        await fs.unlink(tempFile);
         const filesToDelete = await fs.readdir(outputDir);
         for (const file of filesToDelete) {
           await fs.unlink(path.join(outputDir, file));
         }
         await fs.rmdir(outputDir);
-        console.log(`Deleted files in ${outputDir}`);
+        console.log(`Deleted files in ${outputDir} and ${tempFile}`);
       } catch (err) {
         console.error(`Error deleting files: ${err}`);
       }
     });
   } catch (error) {
-    console.error(error);
+    console.error("Error processing PDF:", error);
     res.status(500).send("An error occurred while processing the PDF");
   }
 });
 
 // Serve the images
 app.use("/images", express.static(path.join(path.resolve(), "output")));
+
+// Add a simple GET route for testing
+app.get("/", (req, res) => {
+  res.send("PDF conversion service is running");
+});
+
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server running on http://localhost:${port}`);
 });
