@@ -22,7 +22,7 @@ const getTotalPages = (pdfInfoOutput) => {
 
 const convertPDFChunk = (inputFile, outputFileName, options) => {
   return new Promise((resolve, reject) => {
-    const worker = new Worker('./pdfWorker.js', {
+    const worker = new Worker(path.join(__dirname, 'src', 'pdfWorker.js'), {
       workerData: { inputFile, outputFileName, options }
     });
     worker.on('message', resolve);
