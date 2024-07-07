@@ -83,7 +83,7 @@ app.post("/convert", async (req, res) => {
         firstPageToConvert: firstPage,
         lastPageToConvert: lastPage,
         pngFile: true,
-        scalePageTo: totalPages > 40 ? 1024 : 1536,
+        scalePageTo: totalPages > 50 ? 1024 : 1536,
       };
 
       await convertPDFChunk(tempFile, outputFileName, options);
