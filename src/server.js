@@ -7,6 +7,11 @@ import fetch from "node-fetch";
 import schedule from "node-schedule";
 import { Worker } from "worker_threads";
 import compression from "compression";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 app.use(express.json());
@@ -52,7 +57,7 @@ app.post("/convert", async (req, res) => {
     console.log(`Took ${Date.now() - functionTime}ms to download the PDF file`);
 
     // Save the buffer to a temporary file
-    const tempDir = path.join(path.resolve(), "temp");
+    const tempDir = path.join(__dirname, "temp");
     await fs.mkdir(tempDir, { recursive: true });
     const tempFile = path.join(tempDir, `${Date.now()}.pdf`);
     await fs.writeFile(tempFile, buffer);
@@ -65,7 +70,7 @@ app.post("/convert", async (req, res) => {
     console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
 
     // Convert the PDF to images
-    const outputDir = path.join(path.resolve(), "output", Date.now() + uuidv4());
+    const outputDir = path.join(__dirname, "output", Date.now() + uuidv4());
     await fs.mkdir(outputDir, { recursive: true });
 
     const chunkSize = 20; // Reduced chunk size
@@ -124,13 +129,13 @@ app.post("/convert", async (req, res) => {
 });
 
 // Serve the images
-app.use("/images", express.static(path.join(path.resolve(), "output")));
+app.use("/images", express.static(path.join(__dirname, "output")));
 
 // Add a simple GET route for testing
 app.get("/", (req, res) => {
   res.send("PDF conversion service is running");
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`Server running on http://localhost:${port}`);
 });
