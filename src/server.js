@@ -40,8 +40,7 @@ const convertPDFChunk = (inputFile, outputFileName, options) => {
 
 app.post("/convert", async (req, res) => {
   console.log("Received POST request to /convert");
-  const pdfUrl = req.body.pdfUrl;
-  let totalPages = req.body.totalPages;
+  const { pdfUrl, totalPages, startPage, endPage } = req.body;
 
   if (!pdfUrl) {
     return res.status(400).send("PDF URL is required");
@@ -62,32 +61,36 @@ app.post("/convert", async (req, res) => {
     const tempFile = path.join(tempDir, `${Date.now()}.pdf`);
     await fs.writeFile(tempFile, buffer);
 
+    let actualTotalPages = totalPages;
     if (!totalPages) {
       const pdfInfo = await poppler.pdfInfo(tempFile);
-      totalPages = getTotalPages(pdfInfo);
-      console.log(`Total pages: ${totalPages}`);
+      actualTotalPages = getTotalPages(pdfInfo);
+      console.log(`Total pages: ${actualTotalPages}`);
     }
     console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
+
+    const firstPageToConvert = startPage || 1;
+    const lastPageToConvert = endPage || actualTotalPages;
 
     // Convert the PDF to images
     const outputDir = path.join(__dirname, "output", Date.now() + uuidv4());
     await fs.mkdir(outputDir, { recursive: true });
 
     const chunkSize = 20; // Reduced chunk size
-    const chunks = Math.ceil(totalPages / chunkSize);
+    const chunks = Math.ceil((lastPageToConvert - firstPageToConvert + 1) / chunkSize);
     const promises = Array.from({ length: chunks }, async (_, chunkIndex) => {
-      const firstPage = chunkIndex * chunkSize + 1;
-      const lastPage = Math.min(firstPage + chunkSize - 1, totalPages);
+      const firstPage = firstPageToConvert + chunkIndex * chunkSize;
+      const lastPage = Math.min(firstPage + chunkSize - 1, lastPageToConvert);
       const outputFileName = path.join(outputDir, `output_page`);
       const options = {
         firstPageToConvert: firstPage,
         lastPageToConvert: lastPage,
         pngFile: true,
-        scalePageTo: totalPages > 50 ? 1024 : 1536,
+        scalePageTo: actualTotalPages > 50 ? 1024 : 1536,
       };
 
       await convertPDFChunk(tempFile, outputFileName, options);
-      console.log(`Converted pages ${firstPage} to ${lastPage} of ${totalPages}`);
+      console.log(`Converted pages ${firstPage} to ${lastPage} of ${actualTotalPages}`);
     });
 
     await Promise.all(promises);
