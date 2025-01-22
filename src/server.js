@@ -9,6 +9,7 @@ import { Worker } from "worker_threads";
 import compression from "compression";
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,6 +68,7 @@ app.post("/convert", async (req, res) => {
       const actualTotalPages = getTotalPages(pdfInfo);
       const pdfText = await poppler.pdfToText(tempFile);
       const pdfDensity = pdfText.length / actualTotalPages;
+      const pdfKey = crypto.createHash('sha256').update(pdfText).digest('hex');
       console.log(`PDF density: ${pdfDensity}`);
       console.log(`Total pages: ${actualTotalPages}`);
     console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
@@ -113,7 +115,8 @@ app.post("/convert", async (req, res) => {
     // Send the links as the response
     res.json({ links, pdfInfo:{
       totalPages: actualTotalPages,
-      density: pdfDensity
+      density: pdfDensity,
+      pdfKey: pdfKey
     } });
 
     // Schedule the deletion of the images and directories
@@ -132,6 +135,56 @@ app.post("/convert", async (req, res) => {
     });
   } catch (error) {
     console.error("Error processing PDF:", error);
+    res.status(500).send("An error occurred while processing the PDF");
+  }
+});
+
+app.post('/get-pdf-info', async (req, res) => {
+  const { pdfUrl } = req.body;
+  
+  if (!pdfUrl) {
+    return res.status(400).send("PDF URL is required");
+  }
+
+  const functionTime = Date.now();
+  console.log(`Processing PDF info request for: ${pdfUrl}`);
+
+  try {
+    // Download the PDF file
+    const response = await fetch(pdfUrl);
+    const buffer = await response.buffer();
+    console.log(`Took ${Date.now() - functionTime}ms to download the PDF file`);
+
+    // Save the buffer to a temporary file
+    const tempDir = path.join(__dirname, "temp");
+    await fs.mkdir(tempDir, { recursive: true });
+    const tempFile = path.join(tempDir, `${Date.now()}.pdf`);
+    await fs.writeFile(tempFile, buffer);
+
+    const pdfInfo = await poppler.pdfInfo(tempFile);
+    const actualTotalPages = getTotalPages(pdfInfo);
+    const pdfText = await poppler.pdfToText(tempFile);
+    const pdfDensity = pdfText.length / actualTotalPages;
+    const pdfKey = crypto.createHash('sha256').update(pdfText).digest('hex');
+
+    res.json({
+      totalPages: actualTotalPages,
+      density: pdfDensity,
+      pdfKey: pdfKey
+    });
+
+    // Schedule deletion of the temporary file
+    schedule.scheduleJob(Date.now() + 10 * 60 * 1000, async () => {
+      try {
+        await fs.unlink(tempFile);
+        await fs.rm(tempDir, { recursive: true, force: true });
+        console.log(`Deleted temporary file ${tempFile} and cleaned up ${tempDir}`);
+      } catch (err) {
+        console.error(`Error deleting files: ${err}`);
+      }
+    });
+  } catch (error) {
+    console.error("Error processing PDF info:", error);
     res.status(500).send("An error occurred while processing the PDF");
   }
 });
