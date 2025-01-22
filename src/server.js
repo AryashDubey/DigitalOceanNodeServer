@@ -60,13 +60,15 @@ app.post("/convert", async (req, res) => {
     await fs.mkdir(tempDir, { recursive: true });
     const tempFile = path.join(tempDir, `${Date.now()}.pdf`);
     await fs.writeFile(tempFile, buffer);
+  
 
-    let actualTotalPages = totalPages;
-    if (!totalPages) {
+  
       const pdfInfo = await poppler.pdfInfo(tempFile);
-      actualTotalPages = getTotalPages(pdfInfo);
+      const actualTotalPages = getTotalPages(pdfInfo);
+      const pdfText = await poppler.pdfToText(tempFile);
+      const pdfDensity = pdfText.length / actualTotalPages;
+      console.log(`PDF density: ${pdfDensity}`);
       console.log(`Total pages: ${actualTotalPages}`);
-    }
     console.log(`Took ${Date.now() - functionTime}ms to get total pages of the PDF file`);
 
     const firstPageToConvert = startPage || 1;
@@ -109,7 +111,10 @@ app.post("/convert", async (req, res) => {
     });
 
     // Send the links as the response
-    res.json({ links });
+    res.json({ links, pdfInfo:{
+      totalPages: actualTotalPages,
+      density: pdfDensity
+    } });
 
     // Schedule the deletion of the images and directories
     schedule.scheduleJob(Date.now() + 10 * 60 * 1000, async () => {
